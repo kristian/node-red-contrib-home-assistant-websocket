@@ -146,10 +146,17 @@ class EventsHaNode extends EventsNode {
         }
     }
 
-    async handleTriggerMessage(data = {}) {
-        if (this.isEnabled === false) {
-            return;
+    // Find the number of outputs by looking at the number of wires
+    get #numberOfOutputs(): number {
+        if ('wires' in this && Array.isArray(this.wires)) {
+            return this.wires.length;
         }
+
+        return 0;
+    }
+
+    async handleTriggerMessage(data = {}) {
+        if (!this.isEnabled) return;
 
         const schema = Joi.object({
             entity_id: Joi.string().allow(null),
@@ -197,7 +204,19 @@ class EventsHaNode extends EventsNode {
             return;
         }
 
-        const conditionalValue = validatedData.output_path;
+        const outputCount = this.#numberOfOutputs;
+
+        // If there are no outputs, there is nothing to do
+        if (outputCount === 0) return;
+
+        // Remove any paths that are greater than the number of outputs
+        const paths = validatedData.output_path
+            .split(',')
+            .map((path) => Number(path))
+            .filter((path) => path <= outputCount);
+
+        // If there are no paths, there is nothing to do
+        if (paths.length === 0) return;
 
         const msg = {
             topic: entityId,
@@ -205,13 +224,29 @@ class EventsHaNode extends EventsNode {
             data: eventMessage.event,
         };
 
+        // If there is only one path and it is 0 or 1, return the payload as is
+        let payload;
+        if (paths.length === 1 && paths.includes(1)) {
+            payload = msg;
+        } else if (paths.includes(0)) {
+            // create an array the size of the number of outputs and fill it with the payload
+            payload = new Array(outputCount).fill([msg]);
+        } else {
+            // create an array and fill it with the message only if index exists in paths
+            payload = new Array(outputCount)
+                .fill(0)
+                .map((_, index) =>
+                    paths.includes(index + 1) ? msg : null,
+                );
+        }
+
         this.status.set({
-            shape: conditionalValue ? STATUS_SHAPE_DOT : STATUS_SHAPE_RING,
+            shape: paths.includes(1) ? STATUS_SHAPE_DOT : STATUS_SHAPE_RING,
             text: this.status.appendDateString(
                 eventMessage.event.new_state.state,
             ),
         });
-        this.send(conditionalValue ? [msg, null] : [null, msg]);
+        this.send(payload);
     }
 
     getNodeEntityId() {}
