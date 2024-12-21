@@ -154,7 +154,7 @@ class EventsHaNode extends EventsNode {
         const schema = Joi.object({
             entity_id: Joi.string().allow(null),
             skip_condition: Joi.boolean().default(false),
-            output_path: Joi.boolean().default(true),
+            output_path: Joi.string().default('0'),
         });
         let validatedData, entity, entityId;
 
